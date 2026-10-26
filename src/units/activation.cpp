@@ -289,7 +289,3 @@ u32 ActivationUnit::pool_size() const {
 u32 ActivationUnit::pool_width() const {
     return pool_width_;
 }
-
-const std::vector<i32>& ActivationUnit::line() const {
-    return line_;
-}

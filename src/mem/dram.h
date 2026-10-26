@@ -4,7 +4,6 @@
 
 #include <algorithm>
 #include <cstring>
-#include <set>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -16,7 +15,6 @@
 class Dram {
 public:
     static constexpr u64 kPageBytes = v1::kTileBytes;   // a weight tile fills exactly one page
-    static constexpr u64 kRowBytes  = v1::kMxuDim;      // instructions address DRAM in 256-byte rows
 
     Dram(std::string name, u64 bytes) : name_(std::move(name)), size_(bytes) {}
 
@@ -28,20 +26,9 @@ public:
         return pages_.size();
     }
 
-    // The page numbers written so far, smallest first.
-    std::vector<u64> allocated_pages() const {
-        std::vector<u64> numbers;
-        for (const auto& entry : pages_) {
-            numbers.push_back(entry.first);
-        }
-        std::sort(numbers.begin(), numbers.end());
-        return numbers;
-    }
-
     // A copy can cross page boundaries, so it is done one page-sized piece at a time.
     void write(u64 addr, const i8* src, u64 n) {
         check_range(addr, n);
-        mark_written(addr, n);
 
         while (n > 0) {
             const u64 page_number    = addr / kPageBytes;
@@ -56,16 +43,6 @@ public:
             src  += piece;
             n    -= piece;
         }
-    }
-
-    // Every page written so far, by page number, for the visualizer's copy.
-    const std::unordered_map<u64, std::vector<i8>>& pages() const {
-        return pages_;
-    }
-
-    // The 256-byte rows written so far, smallest first, so the visualizer can paint them.
-    const std::set<u64>& written_rows() const {
-        return written_rows_;
     }
 
     // Bytes never written read as zero, and reading never allocates a page.
@@ -96,16 +73,6 @@ private:
     std::string name_;   // "host" or "wmem", for error messages
     u64         size_;
     std::unordered_map<u64, std::vector<i8>> pages_;   // page number -> that page's bytes
-    std::set<u64>                            written_rows_;
-
-    void mark_written(u64 addr, u64 n) {
-        if (n == 0) {
-            return;
-        }
-        for (u64 row = addr / kRowBytes; row <= (addr + n - 1) / kRowBytes; ++row) {
-            written_rows_.insert(row);
-        }
-    }
 
     std::vector<i8>& page_for_writing(u64 page_number) {
         std::vector<i8>& page = pages_[page_number];

@@ -16,11 +16,9 @@ add_compile_options(-Wall -Wextra -Wpedantic)
 file(GLOB_RECURSE CORE_SRC CONFIGURE_DEPENDS src/*.cpp)
 
 # tpu_core: the whole machine. Header-only until the first .cpp arrives.
-find_package(Threads REQUIRED)
 if(CORE_SRC)
   add_library(tpu_core STATIC ${CORE_SRC})
   target_include_directories(tpu_core PUBLIC src)
-  target_link_libraries(tpu_core PUBLIC Threads::Threads)
 else()
   add_library(tpu_core INTERFACE)
   target_include_directories(tpu_core INTERFACE src)
@@ -33,11 +31,6 @@ foreach(tool tpu_sim gen_programs roofline check_headers)
     target_link_libraries(${tool} PRIVATE tpu_core)
   endif()
 endforeach()
-
-# The simulator serves the visualizer's page straight from the source tree.
-if(TARGET tpu_sim)
-  target_compile_definitions(tpu_sim PRIVATE MINITPU_VIZ_DIR="${CMAKE_SOURCE_DIR}/viz")
-endif()
 
 file(GLOB TEST_SRC CONFIGURE_DEPENDS tests/*.cpp)
 add_executable(tpu_tests ${TEST_SRC})

@@ -1,4 +1,4 @@
-/// The machine: load, in-order issue, exact cycle counts and stall causes, step and step back, errors at the PC, the timeline.
+/// The machine: load, in-order issue, exact cycle counts and stall causes, step and step back, and errors at the PC.
 
 #include <stdexcept>
 #include <string>
@@ -229,50 +229,4 @@ TEST(tpu_errors_name_the_pc_and_leave_the_cycle_alone) {
 
     tpu.load(assemble("Read_Weights tile=0x20000\nHalt\n"));
     CHECK_EQ(error_of_run(tpu), std::string("pc 0: Read_Weights tile=0x20000: weight tile 131072 is past the last tile 131071"));
-}
-
-TEST(tpu_timeline_names_what_each_unit_works_on) {
-    const char* source =
-        ".host 0\n"
-        "1 2\n"
-        ".weights 0 0\n"
-        "3 -4\n"
-        "Read_Host_Memory host=0 ub=0 rows=1\n"
-        "Read_Weights tile=0\n"
-        "MatrixMultiply ub=0 acc=0 rows=1 accumulate=0 new_weights=1\n"
-        "Halt\n";
-    Tpu tpu;
-    tpu.load(assemble(source));
-
-    tpu.run_cycles(1);
-    CHECK_EQ(tpu.activity().back().issued, 0);
-    CHECK_EQ(tpu.activity().back().host, 0);
-
-    tpu.run_cycles(1);
-    CHECK_EQ(tpu.activity().back().issued, 1);
-    CHECK_EQ(tpu.activity().back().fetching, 0);   // tile 0 starts arriving at once
-    CHECK_EQ(tpu.activity().back().host, 0);
-
-    // The MatrixMultiply waits for tile 0 to arrive and shift into the shadow plane.
-    bool saw_shift = false;
-    while (tpu.issued() < 3) {
-        tpu.run_cycles(1);
-        if (tpu.activity().back().shifting == 0) {
-            saw_shift = true;
-        }
-    }
-    CHECK(saw_shift);
-    CHECK_EQ(tpu.activity().back().issued, 2);
-    CHECK_EQ(tpu.activity().back().mxu, 2);
-    CHECK_EQ(tpu.activity().back().fetching, -1);
-
-    tpu.run_to_halt();
-    CHECK_EQ(tpu.activity().size(), kTimelineCycles);   // only the last 64 cycles are kept
-    CHECK_EQ(tpu.activity().back().issued, 3);
-    CHECK(tpu.acc().written_rows()[0]);                 // the multiply wrote accumulator row 0, and only it
-    CHECK(!tpu.acc().written_rows()[1]);
-
-    tpu.back_cycles(1);   // replay rebuilds the history
-    CHECK_EQ(tpu.activity().size(), kTimelineCycles);
-    CHECK_EQ(tpu.activity().back().issued, -1);
 }

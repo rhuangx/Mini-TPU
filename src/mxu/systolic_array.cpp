@@ -248,18 +248,6 @@ const Pe& SystolicArray::pe(u32 k, u32 n) const {
     return grid_[at(k, n)];
 }
 
-const std::vector<i8>& SystolicArray::active_weights() const {
-    return planes_[active_plane_];
-}
-
-const std::vector<i8>& SystolicArray::shadow_weights() const {
-    return planes_[shadow_plane()];
-}
-
-const std::vector<Pe>& SystolicArray::grid() const {
-    return grid_;
-}
-
 int SystolicArray::shadow_plane() const {
     return 1 - active_plane_;
 }

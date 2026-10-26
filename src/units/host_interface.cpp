@@ -110,19 +110,3 @@ u64 HostInterface::bytes_done() const {
 u64 HostInterface::bytes_total() const {
     return bytes_total_;
 }
-
-Direction HostInterface::direction() const {
-    return direction_;
-}
-
-u32 HostInterface::host_row() const {
-    return static_cast<u32>(host_addr_ / UnifiedBuffer::kRowBytes);
-}
-
-u32 HostInterface::ub_row() const {
-    return static_cast<u32>(ub_addr_ / UnifiedBuffer::kRowBytes);
-}
-
-u32 HostInterface::rows() const {
-    return static_cast<u32>(bytes_total_ / UnifiedBuffer::kRowBytes);
-}

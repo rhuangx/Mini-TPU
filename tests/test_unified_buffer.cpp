@@ -1,4 +1,4 @@
-/// Unified Buffer: size, zero start, row and byte views agree, out-of-range access throws, and writes mark rows.
+/// Unified Buffer: size, zero start, row and byte views agree, and out-of-range access throws.
 
 #include <limits>
 #include <vector>
@@ -58,24 +58,4 @@ TEST(ub_out_of_range_throws) {
 
     ub.write(UnifiedBuffer::kBytes - 1, &byte, 1);   // the very last byte is fine
     ub.read(0, &byte, 0);                            // an empty range is fine
-}
-
-TEST(ub_marks_the_rows_it_writes) {
-    UnifiedBuffer ub;
-    const std::vector<i8> bytes(10, 1);
-    ub.write(250, bytes.data(), bytes.size());   // the end of row 0 and the start of row 1
-    ub.row(7)[0] = 5;
-
-    const UnifiedBuffer& reader = ub;
-    std::vector<i8> out(4, 0);
-    reader.read(9 * UnifiedBuffer::kRowBytes, out.data(), out.size());
-    CHECK_EQ(reader.row(10)[0], 0);
-
-    const std::vector<bool>& written = ub.written_rows();
-    CHECK(written[0]);
-    CHECK(written[1]);
-    CHECK(!written[2]);
-    CHECK(written[7]);
-    CHECK(!written[9]);    // reads never mark a row
-    CHECK(!written[10]);
 }

@@ -48,9 +48,6 @@ public:
     u32 pool_size() const;
     u32 pool_width() const;
 
-    // The pooling line buffer: one band of pooled pixels, 256 running values each (empty without pooling).
-    const std::vector<i32>& line() const;
-
 private:
     const Accumulators& acc_;
     UnifiedBuffer&      ub_;

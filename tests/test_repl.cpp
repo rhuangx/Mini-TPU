@@ -15,7 +15,7 @@ TEST(repl_plain_mode_echoes_and_stops_at_quit) {
     run_plain(shell, in, out);
     const std::string expected =
         "tpu> step\n"
-        "error: unknown command 'step': the terminal takes load FILE and quit; step through the program in the visualizer\n"
+        "error: unknown command 'step': the terminal takes load FILE and quit\n"
         "tpu> load /nonexistent/prog.s\n"
         "/nonexistent/prog.s: error: cannot open file\n"
         "tpu> quit\n";

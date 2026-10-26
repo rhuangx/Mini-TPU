@@ -2,12 +2,10 @@
 
 #pragma once
 
-#include <deque>
 #include <string>
 #include <vector>
 
 #include "common/stats.h"
-#include "core/activity.h"
 #include "isa/isa.h"
 #include "mem/accumulators.h"
 #include "mem/dram.h"
@@ -64,9 +62,6 @@ public:
     const SystolicArray&  mxu() const;
     const ActivationUnit& activation() const;
 
-    // For the visualizer's timeline: the last kTimelineCycles cycles, oldest first.
-    const std::deque<CycleRecord>& activity() const;
-
 private:
     Program        program_;
     UnifiedBuffer  ub_;
@@ -83,15 +78,9 @@ private:
     Stall stall_  = Stall::None;
     Stats stats_;
 
-    std::deque<CycleRecord> activity_;
-    i32 host_pc_ = -1;   // the instruction each unit last started, which it works for while busy
-    i32 mxu_pc_  = -1;
-    i32 act_pc_  = -1;
-
     bool  units_idle() const;
     Stall why_blocked(const Instr& in) const;
     void  issue(const Instr& in);
     void  reload();
-    void  record_cycle(i32 issued_pc);
     [[noreturn]] void fail_at_pc(const std::string& what) const;
 };

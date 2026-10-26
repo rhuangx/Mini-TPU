@@ -1,6 +1,6 @@
 # Mini-TPU
 
-A cycle-accurate simulator of Google's **TPUv1**, the inference chip, written in plain C++17. You drive it from a terminal and watch it in a live browser view. Every unit is modelled at its real size and speed:
+A cycle-accurate simulator of Google's **TPUv1**, the inference chip, written in plain C++17. You drive it from a terminal. Every unit is modelled at its real size and speed:
 - a 256×256 systolic array
 - a 24 MiB Unified Buffer
 - 4 MiB of accumulators
@@ -14,7 +14,7 @@ A small compiler turns dense layers, MLPs and convolutions into TPU programs, an
 ./tpu
 ```
 
-`./tpu` rebuilds anything that changed, starts the simulator, and opens the visualizer in your browser. The terminal only loads programs. The page's buttons move the machine forward and back, and every value in it can be read on the page.
+`./tpu` rebuilds anything that changed and starts the simulator.
 
 ## The machine
 
@@ -42,11 +42,3 @@ The terminal takes two commands:
 | `quit` | exit (Ctrl-C and Ctrl-D too) |
 
 `./tpu FILE` loads the file as it starts. Enter on an empty line repeats the last command, so after editing a `.s` file, Enter reloads it. A `.s` file holds its data (`.host ROW`, `.weights TILE [ROW]`, then int8 values) and its instructions (`Op key=value …`); [docs/isa.md](docs/isa.md) has the full syntax.
-
-Everything else happens on the page:
-- **◀ back** and **forward ▶** move the machine one step. The switch between them sets the step:
-  - **instruction:** forward runs until the next instruction issues; back undoes the last one
-  - **cycle:** exactly one clock cycle
-- **go to cycle:** type a cycle number in this box in the header and press Enter to jump straight to it, forward or back. Going forward stops at Halt.
-- Going back reloads the program and replays it, which is exact because the machine is deterministic.
-- **The row inspector** shows values in two scrollable halves: memories on the left, and the MXU's 256 × 256 PEs on the right. Type a row (`36` or `0x24`) to scroll to it. Both halves update with every step.

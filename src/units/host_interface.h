@@ -34,12 +34,6 @@ public:
     u64  bytes_done() const;
     u64  bytes_total() const;
 
-    // The running (or last) transfer, for the visualizer.
-    Direction direction() const;
-    u32       host_row() const;
-    u32       ub_row() const;
-    u32       rows() const;
-
 private:
     Dram&          host_;
     UnifiedBuffer& ub_;

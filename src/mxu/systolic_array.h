@@ -47,11 +47,6 @@ public:
     int shadow_tile() const;     // -1 when the shadow plane is empty
     const Pe& pe(u32 k, u32 n) const;
 
-    // Whole planes and the whole grid, 256 x 256 each, row by row, for the visualizer's copy.
-    const std::vector<i8>& active_weights() const;
-    const std::vector<i8>& shadow_weights() const;
-    const std::vector<Pe>& grid() const;
-
 private:
     const UnifiedBuffer& ub_;
     Accumulators&        acc_;

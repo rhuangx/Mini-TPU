@@ -17,13 +17,11 @@ public:
 
     UnifiedBuffer() {
         bytes_.resize(kBytes, 0);
-        written_.resize(kRows, false);
     }
 
     // Instructions address the buffer by row; the pointer covers that row's 256 bytes. Only writers ask for it.
     i8* row(u32 r) {
         check_row(r);
-        written_[r] = true;
         return bytes_.data() + start_of_row(r);
     }
 
@@ -36,12 +34,6 @@ public:
     void write(u64 addr, const i8* src, u64 n) {
         check_range(addr, n);
         std::memcpy(bytes_.data() + addr, src, n);
-        if (n == 0) {
-            return;
-        }
-        for (u64 r = addr / kRowBytes; r <= (addr + n - 1) / kRowBytes; ++r) {
-            written_[r] = true;
-        }
     }
 
     void read(u64 addr, i8* dst, u64 n) const {
@@ -49,19 +41,8 @@ public:
         std::memcpy(dst, bytes_.data() + addr, n);
     }
 
-    // All 24 MiB, row after row, for the visualizer's copy.
-    const std::vector<i8>& bytes() const {
-        return bytes_;
-    }
-
-    // Which rows have been written since the buffer was made, so the visualizer can paint them.
-    const std::vector<bool>& written_rows() const {
-        return written_;
-    }
-
 private:
-    std::vector<i8>   bytes_;
-    std::vector<bool> written_;
+    std::vector<i8> bytes_;
 
     static u64 start_of_row(u32 r) {
         return static_cast<u64>(r) * kRowBytes;

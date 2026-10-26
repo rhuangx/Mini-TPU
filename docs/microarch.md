@@ -8,13 +8,12 @@
 2. **Check.** `why_blocked` asks whether the instruction can issue this cycle. If it can't, it names exactly one stall cause, from the table below.
 3. **Deadlock check.** If the instruction is blocked and no unit is working, nothing can ever unblock it. The machine stops with, for example, `pc 0: MatrixMultiply …: deadlock: weights not ready, but no unit is working`.
 4. **Issue.** The instruction starts its unit, and the PC moves on (except on `Halt`). At most one instruction issues per cycle, always in program order.
-5. **Record.** The cycle's activity goes into a log of the last 512 cycles, which the visualizer's timeline and memory glows are drawn from.
-6. **Advance.** Each unit takes one step, in the order host interface → Weight FIFO → MXU (weight shifter, then the array) → activation unit.
-7. **Count.** The cycle counter goes up, and a blocked cycle is charged to its stall cause.
+5. **Advance.** Each unit takes one step, in the order host interface → Weight FIFO → MXU (weight shifter, then the array) → activation unit.
+6. **Count.** The cycle counter goes up, and a blocked cycle is charged to its stall cause.
 
 An error at any step leaves the machine exactly as it was before the cycle.
 
-The machine is deterministic, and `load` is the only way data enters it. That makes going back simple: `back N` and `prev N` reload the program and replay to the earlier point, and they land on the identical state.
+The machine is deterministic, and `load` is the only way data enters it. That makes going back simple: `Tpu::back_cycles` and `Tpu::prev_instructions` reload the program and replay to the earlier point, and they land on the identical state.
 
 ## The units
 
@@ -62,7 +61,7 @@ An instruction waits until nothing it depends on is still in flight. The check i
 | | a host transfer or the MXU is touching its output rows | Unified Buffer rows not ready |
 | `Sync`, `Halt` | any unit is working | waiting for units to finish |
 
-These are the eight stall causes. Every cycle that issues nothing is charged to exactly one of them. The counts appear in the visualizer's stall panel, and the letters on its timeline.
+These are the eight stall causes. Every cycle that issues nothing is charged to exactly one of them, and the counts are kept in `Stats::stall_cycles`.
 
 ## Simplifications
 

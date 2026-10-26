@@ -1,7 +1,6 @@
-/// DRAM: 8 GiB addressable without allocating it, page-straddling copies, zero reads, bounds, written rows.
+/// DRAM: 8 GiB addressable without allocating it, page-straddling copies, zero reads, bounds.
 
 #include <limits>
-#include <set>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -80,16 +79,4 @@ TEST(dram_out_of_range_throws_with_its_name) {
 
     const std::string message = read_error(host, 2000, 1);
     CHECK_EQ(message, std::string("host bytes [2000, +1) run past its 1024 bytes"));
-}
-
-TEST(dram_marks_the_rows_it_writes) {
-    Dram host("host", 4 * kGiB);
-    const std::vector<i8> bytes(300, 1);
-    host.write(Dram::kPageBytes - 100, bytes.data(), bytes.size());   // across a page boundary: rows 255 and 256
-
-    std::vector<i8> out(4, 0);
-    host.read(5 * Dram::kPageBytes, out.data(), out.size());
-
-    const std::set<u64> expected = {255, 256};
-    CHECK(host.written_rows() == expected);   // the read added nothing
 }
