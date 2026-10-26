@@ -2,3 +2,4 @@ build/
 examples/
 .cache/
 programs/
+docs/perf-plan.md
