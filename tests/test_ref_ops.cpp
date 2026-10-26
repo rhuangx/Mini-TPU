@@ -93,6 +93,33 @@ TEST(ref_conv2d_small) {
     CHECK_EQ(out.at(3, 0), 5 + 6 + 8 + 9);
 }
 
+TEST(ref_conv2d_padded_and_strided) {
+    // The same 3x3 image, a 3x3 kernel of ones, one pixel of zero padding and stride 2: the four corners' windows.
+    const Matrix8 image   = matrix(9, 1, {1, 2, 3, 4, 5, 6, 7, 8, 9});
+    const Matrix8 weights = matrix(9, 1, {1, 1, 1, 1, 1, 1, 1, 1, 1});
+    const Matrix32 out = ref_conv2d(image, 3, 3, 3, weights, 2, 1);
+    CHECK_EQ(out.rows, u32{4});
+    CHECK_EQ(out.at(0, 0), 1 + 2 + 4 + 5);   // centred on pixel (0, 0): the padding adds nothing
+    CHECK_EQ(out.at(1, 0), 2 + 3 + 5 + 6);   // centred on (0, 2)
+    CHECK_EQ(out.at(3, 0), 5 + 6 + 8 + 9);   // centred on (2, 2)
+
+    const Matrix32 same = ref_conv2d(image, 3, 3, 3, weights, 1, 1);
+    CHECK_EQ(same.rows, u32{9});
+    CHECK_EQ(same.at(4, 0), 45);             // the centre sees the whole image
+}
+
+TEST(ref_pool_padded_and_strided) {
+    // 3x3 max windows 2 apart with one pixel of padding, over a 4x4 map: padding never wins, even against negatives.
+    Matrix8 map(16, 1);
+    for (u32 i = 0; i < 16; ++i) {
+        map.values[i] = static_cast<i8>(static_cast<int>(i) - 20);
+    }
+    const Matrix8 largest = ref_pool(map, 4, 3, Pooling::Max, 2, 1);
+    CHECK_EQ(largest.rows, u32{4});
+    CHECK_EQ(value_at(largest, 0, 0), 5 - 20);    // rows and columns {-1, 0, 1}: pixel (1, 1)
+    CHECK_EQ(value_at(largest, 3, 0), 15 - 20);   // rows and columns {1, 2, 3}: pixel (3, 3)
+}
+
 TEST(ref_im2col_times_weights_is_the_convolution) {
     const Matrix8 image   = random_matrix(7 * 6, 3, 11);
     const Matrix8 weights = random_matrix(3 * 3 * 3, 5, 12);

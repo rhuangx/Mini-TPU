@@ -43,11 +43,14 @@ void check_shift(u32 value) {
     }
 }
 
-// With pooling, size is 1-7 and width 1-255; without it both stay 0, so the encoding is unchanged.
+// With pooling, size is 1-7, width 1-255 and stride 0-7; without it all three stay 0, so the encoding is unchanged.
 void check_pooling(const Instr& in) {
     if (in.pool == Pooling::None) {
         if (in.pool_size != 0 || in.pool_width != 0) {
             throw std::out_of_range("size= and width= only go with pool=max or pool=avg");
+        }
+        if (in.pool_stride != 0) {
+            throw std::out_of_range("stride= only goes with pool=max or pool=avg");
         }
         return;
     }
@@ -56,6 +59,9 @@ void check_pooling(const Instr& in) {
     }
     if (in.pool_width < 1) {
         throw std::out_of_range("pooling needs width=, the feature map's width in rows");
+    }
+    if (in.pool_stride > 7) {
+        throw std::out_of_range("stride=" + std::to_string(in.pool_stride) + " must be 0 to 7");
     }
 }
 
@@ -156,6 +162,7 @@ InstrBytes encode(const Instr& in) {
             check_pooling(in);
             write_bytes(word, 11, 1, in.pool_width, "width");   // byte 11
             word[10] = static_cast<u8>(in.shift);               // byte 10
+            word[2]  = static_cast<u8>(in.pool_stride);         // byte 2, bits 0-2
             const u32 flags = static_cast<u32>(in.function) | (static_cast<u32>(in.pool) << 2) | (in.pool_size << 4);
             word[1]  = static_cast<u8>(flags);                  // flag byte: bits 0-1 function, 2-3 pool, 4-6 size
             break;
@@ -205,6 +212,7 @@ Instr decode(const InstrBytes& word) {
             in.pool       = static_cast<Pooling>((word[1] >> 2) & 0x3);    // flag byte, bits 2-3
             in.pool_size  = (word[1] >> 4) & 0x7;                          // flag byte, bits 4-6
             in.pool_width = word[11];                                      // byte 11
+            in.pool_stride = word[2] & 0x7;                                // byte 2, bits 0-2
             if (static_cast<u8>(in.pool) > 2) {
                 throw std::invalid_argument("unknown pooling " + std::to_string(static_cast<u32>(in.pool)));
             }
@@ -250,8 +258,11 @@ std::string disasm(const Instr& in) {
             if (in.pool == Pooling::None) {
                 return name + operands + options;
             }
-            const std::string pooling = " pool=" + std::string(pooling_name(in.pool)) + " size=" + std::to_string(in.pool_size) +
-                                        " width=" + std::to_string(in.pool_width);
+            std::string pooling = " pool=" + std::string(pooling_name(in.pool)) + " size=" + std::to_string(in.pool_size) +
+                                  " width=" + std::to_string(in.pool_width);
+            if (in.pool_stride != 0) {
+                pooling += " stride=" + std::to_string(in.pool_stride);
+            }
             return name + operands + options + pooling;
         }
     }

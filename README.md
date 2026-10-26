@@ -8,7 +8,7 @@ A cycle-accurate simulator of Google's **TPUv1**, the inference chip, written in
 - a PCIe host link
 - an activation unit with pooling
 
-A small compiler turns dense layers, MLPs and convolutions into TPU programs, and every result is checked bit for bit against plain reference loops.
+A small compiler turns dense layers, MLPs, convolutions and a whole ResNet-18 into TPU programs, and every result is checked bit for bit against plain reference loops.
 
 ```
 ./tpu
@@ -42,3 +42,12 @@ The terminal takes two commands:
 | `quit` | exit (Ctrl-C and Ctrl-D too) |
 
 `./tpu FILE` loads the file as it starts. Enter on an empty line repeats the last command, so after editing a `.s` file, Enter reloads it. A `.s` file holds its data (`.host ROW`, `.weights TILE [ROW]`, then int8 values) and its instructions (`Op key=value …`); [docs/isa.md](docs/isa.md) has the full syntax.
+
+## Running ResNet-18
+
+```
+cmake -S . -B build && cmake --build build --target resnet18 && ./build/resnet18
+```
+
+This builds ResNet-18 at 224×224 with random int8 weights, compiles the whole network into one TPU program, runs it on the simulator, and checks every intermediate map and all 1,000 logits against a plain-loop int8 reference. It prints the cycle count, the MXU's utilization and where the stalled cycles went. One image is about 600,000 cycles (0.86 ms at 700 MHz), and simulating it takes about 11 seconds. `--seed N` picks other weights; [docs/kernels.md](docs/kernels.md#resnet-18) explains how the network is laid out on the chip.
+

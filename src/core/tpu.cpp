@@ -260,7 +260,7 @@ Stall Tpu::why_blocked(const Instr& in) const {
             return Stall::None;
         case Op::Activate: {
             // With pooling it writes fewer UB rows than it reads accumulator rows.
-            const u32 out_rows = activate_output_rows(in.rows, in.pool, in.pool_size);
+            const u32 out_rows = activate_output_rows(in.rows, in.pool, in.pool_size, in.pool_width, in.pool_stride);
             if (activation_.busy()) {
                 return Stall::ActivationBusy;
             }
@@ -303,7 +303,8 @@ void Tpu::issue(const Instr& in) {
             mxu_.start(in.ub_row, in.acc_row, in.rows, in.accumulate == 1, in.new_weights == 1);
             break;
         case Op::Activate:
-            activation_.start(in.acc_row, in.ub_row, in.rows, in.shift, in.function, in.pool, in.pool_size, in.pool_width);
+            activation_.start(in.acc_row, in.ub_row, in.rows, in.shift, in.function, in.pool, in.pool_size, in.pool_width,
+                              in.pool_stride);
             break;
     }
 

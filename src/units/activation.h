@@ -14,16 +14,17 @@ i8 activate(i32 value, u32 shift, ActivationFunction function);
 // The average of `count` int8 values from their sum, rounded to the nearest with halves away from zero.
 i8 average(i32 sum, u32 count);
 
-// How many UB rows an Activate writes: `rows`, or rows / (size x size) when it pools.
-u32 activate_output_rows(u32 rows, Pooling pool, u32 pool_size);
+// How many UB rows an Activate writes: `rows`, or one per pooling window that fits in the map when it pools.
+u32 activate_output_rows(u32 rows, Pooling pool, u32 pool_size, u32 pool_width, u32 pool_stride);
 
 class ActivationUnit {
 public:
     ActivationUnit(const Accumulators& acc, UnifiedBuffer& ub);
 
     // Starts activating `rows` accumulator rows into UB rows; throws on a bad range, a bad pooling shape, or a running Activate.
+    // pool_stride 0 means windows side by side (stride = size); 1-7 lets them overlap or skip pixels.
     void start(u32 acc_row, u32 ub_row, u32 rows, u32 shift, ActivationFunction function, Pooling pool, u32 pool_size,
-               u32 pool_width);
+               u32 pool_width, u32 pool_stride);
 
     // One cycle: the next accumulator row goes through the function, straight into its UB row or into the pooling line buffer.
     void tick();
@@ -59,12 +60,17 @@ private:
     u32 shift_      = 0;
     ActivationFunction function_ = ActivationFunction::Identity;
 
-    // Pooling: the feature map is pool_width_ pixels wide, one accumulator row per pixel, pooled pool_size_ x pool_size_.
-    Pooling pool_       = Pooling::None;
-    u32     pool_size_  = 0;
-    u32     pool_width_ = 0;
+    // Pooling: the feature map is pool_width_ pixels wide, one accumulator row per pixel, pooled pool_size_ x pool_size_
+    // with windows pool_stride_ pixels apart, giving pooled_height_ x pooled_width_ outputs.
+    Pooling pool_          = Pooling::None;
+    u32     pool_size_     = 0;
+    u32     pool_width_    = 0;
+    u32     pool_stride_   = 0;
+    u32     pooled_height_ = 0;
+    u32     pooled_width_  = 0;
+    u32     open_rows_     = 0;   // pooled rows that can be in progress at once: ceil(size / stride)
 
-    // The line buffer: one band of pooled pixels, 256 running values each (max so far, or sum so far).
+    // The line buffer: open_rows_ rows of pooled pixels, 256 running values each (max so far, or sum so far).
     std::vector<i32> line_;
 
     void pool_row(const std::vector<i8>& activated);

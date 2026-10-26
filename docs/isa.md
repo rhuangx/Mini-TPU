@@ -28,14 +28,14 @@ Addresses count in the unit each memory is read in:
 | `0x11` | `Write_Host_Memory` | `ub` → `host`, `rows` | ub 3–5, host 6–9, rows 10–11 |
 | `0x20` | `Read_Weights` | `tile` | tile 3–6 |
 | `0x30` | `MatrixMultiply` | `ub`, `acc`, `rows`, `accumulate`, `new_weights` | ub 3–5, acc 6–7, rows 8–11; flags: bit 0 accumulate, bit 1 new_weights |
-| `0x40` | `Activate` | `acc` → `ub`, `rows`, `shift`, `function`, optional `pool`, `size`, `width` | ub 3–5, acc 6–7, rows 8–9, shift 10, width 11; flags: bits 0–1 function, 2–3 pool, 4–6 size |
+| `0x40` | `Activate` | `acc` → `ub`, `rows`, `shift`, `function`, optional `pool`, `size`, `width`, `stride` | ub 3–5, acc 6–7, rows 8–9, shift 10, width 11, stride byte 2 bits 0–2; flags: bits 0–1 function, 2–3 pool, 4–6 size |
 
 Field widths limit the values:
 - `ub` is 24 bits and `acc` 16.
 - `rows` is 16 bits for host transfers and `Activate`, and 32 bits for `MatrixMultiply`.
 - `tile` and `host` are 32 bits.
 - `shift` is 0–31.
-- `size` is 1–7 and `width` 1–255.
+- `size` is 1–7, `width` 1–255 and `stride` 0–7.
 
 The memories are smaller than their fields can address: the Unified Buffer has 98,304 rows, the accumulators 4,096, and Weight Memory 131,072 tiles. The range is checked when an instruction issues, and an out-of-range instruction stops the machine with an error naming its PC.
 
@@ -73,6 +73,14 @@ With **`pool=max|avg size=K width=W`**, the R input rows are read as a feature m
 - **Shape rules:** W must be a multiple of K, and R a whole number of K-row bands of W pixels.
 - **When results land:** each band's pooled rows reach the Unified Buffer on the cycle its last pixel is read.
 
+Adding **`stride=S`** (1–7) places the windows S pixels apart instead, so they can overlap (`size=3 stride=2` is a CNN's 3×3/2 max pool) or skip pixels:
+- **Output:** one row per window that fits wholly inside the map, ⌊(H − K) / S⌋ + 1 by ⌊(W − K) / S⌋ + 1 of them for a map H = R / W rows high, in reading order. Pixels past the last window are read but go into no window.
+- **Shape rules:** R must be whole image rows of W pixels, and the map at least K×K. There is no padding: a compiler that needs it lays out zero pixels around the map.
+- **When results land:** each pooled row reaches the Unified Buffer on the cycle the last pixel of its windows' bottom image row is read, so pooling still adds no cycles.
+- **Encoding:** `stride` sits in byte 2, which is zero in every other instruction. `stride=0` is the default and means side by side, so programs without it encode exactly as before.
+
+This is an extension of this simulator's ISA: TPUv1's pooling hardware is not documented at this level.
+
 ## Assembler syntax
 
 A `.s` file has one statement per line, and `#` starts a comment.
@@ -89,6 +97,7 @@ Read_Weights tile=1
 MatrixMultiply ub=0x10 acc=0 rows=4 accumulate=0 new_weights=1
 Activate acc=0 ub=0x20 rows=4 shift=8 function=relu
 Activate acc=0 ub=0x40 rows=16 shift=8 function=relu pool=max size=2 width=4
+Activate acc=0 ub=0x50 rows=25 shift=8 function=relu pool=max size=3 width=5 stride=2
 Write_Host_Memory ub=0x20 host=0x8 rows=4
 Halt
 ```

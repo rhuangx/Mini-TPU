@@ -80,6 +80,7 @@ struct Instr {
     Pooling pool     = Pooling::None;   // Activate: none, max or avg over size x size windows of UB rows
     u32 pool_size    = 0;               // 1-7 with pooling, else 0: the window is pool_size x pool_size pixels
     u32 pool_width   = 0;               // 1-255 with pooling, else 0: the feature map's width, one UB row per pixel
+    u32 pool_stride  = 0;               // 0-7 with pooling, else 0: pixels between windows; 0 means pool_size, windows side by side
 };
 
 // Bytes to place in a DRAM before the program runs.

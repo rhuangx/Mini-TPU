@@ -100,25 +100,32 @@ Matrix8 ref_activate(const Matrix32& sums, u32 shift, ActivationFunction functio
     return out;
 }
 
-Matrix8 ref_pool(const Matrix8& map, u32 width, u32 size, Pooling pool) {
+Matrix8 ref_pool(const Matrix8& map, u32 width, u32 size, Pooling pool, u32 stride, u32 pad) {
     if (pool == Pooling::None) {
         return map;
     }
+    if (stride == 0) {
+        stride = size;
+    }
 
-    const u32 height        = map.rows / width;
-    const u32 pooled_height = height / size;
-    const u32 pooled_width  = width / size;
-    Matrix8 out(pooled_height * pooled_width, map.cols);
+    const long long height        = map.rows / width;
+    const long long pooled_height = (height + 2 * pad - size) / stride + 1;
+    const long long pooled_width  = (width + 2 * pad - size) / stride + 1;
+    Matrix8 out(static_cast<u32>(pooled_height * pooled_width), map.cols);
 
-    for (u32 py = 0; py < pooled_height; ++py) {
-        for (u32 px = 0; px < pooled_width; ++px) {
+    for (long long py = 0; py < pooled_height; ++py) {
+        for (long long px = 0; px < pooled_width; ++px) {
             for (u32 c = 0; c < map.cols; ++c) {
                 long long largest = -128;
                 long long sum     = 0;
                 for (u32 dy = 0; dy < size; ++dy) {
                     for (u32 dx = 0; dx < size; ++dx) {
-                        const u32 pixel = (py * size + dy) * width + (px * size + dx);
-                        const long long value = map.at(pixel, c);
+                        const long long y = py * stride + dy - pad;
+                        const long long x = px * stride + dx - pad;
+                        if (y < 0 || y >= height || x < 0 || x >= width) {
+                            continue;
+                        }
+                        const long long value = map.at(static_cast<u32>(y * width + x), c);
                         largest = std::max(largest, value);
                         sum = sum + value;
                     }
@@ -129,33 +136,40 @@ Matrix8 ref_pool(const Matrix8& map, u32 width, u32 size, Pooling pool) {
                     const double mean = static_cast<double>(sum) / static_cast<double>(size * size);
                     result = clamp_to_int8(std::llround(mean));
                 }
-                out.at(py * pooled_width + px, c) = result;
+                out.at(static_cast<u32>(py * pooled_width + px), c) = result;
             }
         }
     }
     return out;
 }
 
-Matrix32 ref_conv2d(const Matrix8& image, u32 height, u32 width, u32 kernel, const Matrix8& weights) {
+Matrix32 ref_conv2d(const Matrix8& image, u32 height, u32 width, u32 kernel, const Matrix8& weights, u32 stride, u32 pad) {
     const u32 channels   = image.cols;
-    const u32 out_height = height - kernel + 1;
-    const u32 out_width  = width - kernel + 1;
+    const u32 out_height = (height + 2 * pad - kernel) / stride + 1;
+    const u32 out_width  = (width + 2 * pad - kernel) / stride + 1;
     Matrix32 out(out_height * out_width, weights.cols);
 
+    // Each input value is spread across every output channel at once (n innermost), which keeps weight reads in order.
     for (u32 y = 0; y < out_height; ++y) {
         for (u32 x = 0; x < out_width; ++x) {
-            for (u32 n = 0; n < weights.cols; ++n) {
-                i32 sum = 0;
-                for (u32 dy = 0; dy < kernel; ++dy) {
-                    for (u32 dx = 0; dx < kernel; ++dx) {
-                        for (u32 c = 0; c < channels; ++c) {
-                            const u32 pixel = (y + dy) * width + (x + dx);
-                            const u32 tap   = (dy * kernel + dx) * channels + c;
-                            sum = sum + static_cast<i32>(image.at(pixel, c)) * static_cast<i32>(weights.at(tap, n));
+            i32* sums = &out.at(y * out_width + x, 0);
+            for (u32 dy = 0; dy < kernel; ++dy) {
+                for (u32 dx = 0; dx < kernel; ++dx) {
+                    // The tap's pixel in unpadded coordinates; the padding outside the image is zero.
+                    const long long iy = static_cast<long long>(y * stride + dy) - pad;
+                    const long long ix = static_cast<long long>(x * stride + dx) - pad;
+                    if (iy < 0 || iy >= height || ix < 0 || ix >= width) {
+                        continue;
+                    }
+                    for (u32 c = 0; c < channels; ++c) {
+                        const i32 value = image.at(static_cast<u32>(iy * width + ix), c);
+                        const u32 tap   = (dy * kernel + dx) * channels + c;
+                        const i8* row   = weights.values.data() + static_cast<std::size_t>(tap) * weights.cols;
+                        for (u32 n = 0; n < weights.cols; ++n) {
+                            sums[n] = sums[n] + value * static_cast<i32>(row[n]);
                         }
                     }
                 }
-                out.at(y * out_width + x, n) = sum;
             }
         }
     }

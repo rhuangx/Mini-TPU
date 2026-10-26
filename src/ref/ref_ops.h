@@ -43,8 +43,11 @@ Matrix32 ref_matmul(const Matrix8& x, const Matrix8& w);
 // Every value as Activate turns it into an int8: x = value / 2^shift, then the function.
 Matrix8 ref_activate(const Matrix32& sums, u32 shift, ActivationFunction function);
 
-// Pools a feature map stored one pixel per row (width pixels per image row) over size x size windows.
-Matrix8 ref_pool(const Matrix8& map, u32 width, u32 size, Pooling pool);
+// Pools a feature map stored one pixel per row (width pixels per image row) over size x size windows, `stride` apart
+// (0 means size). `pad` pixels around the map belong to no window: max ignores them, and avg still divides by size x size.
+Matrix8 ref_pool(const Matrix8& map, u32 width, u32 size, Pooling pool, u32 stride = 0, u32 pad = 0);
 
-// Stride-1, unpadded convolution by direct loops; image is one pixel per row, weight row (dy * kernel + dx) * channels + c.
-Matrix32 ref_conv2d(const Matrix8& image, u32 height, u32 width, u32 kernel, const Matrix8& weights);
+// Convolution by direct loops, zero-padded by `pad` on every side; image is one pixel per row, weight row
+// (dy * kernel + dx) * channels + c. The output is ((height + 2 pad - kernel) / stride + 1) rows of pixels.
+Matrix32 ref_conv2d(const Matrix8& image, u32 height, u32 width, u32 kernel, const Matrix8& weights, u32 stride = 1,
+                    u32 pad = 0);

@@ -37,8 +37,8 @@ Each PE's registers are its activation, its partial sum, and which input row tha
 **Accumulators.** 4,096 rows of 256 int32. A multiply either overwrites its rows or, with `accumulate=1`, adds into them with 32-bit wrap-around.
 
 **Activation unit.** It reads one accumulator row per cycle, applies shift, round, saturate and the function, and writes an int8 Unified Buffer row.
-- **Pooling:** with pooling, each row is one pixel of a feature map. The unit keeps a line buffer holding one band of pooled pixels: a running maximum or a running sum.
-- **Output timing:** it writes the band's pooled rows on the cycle the band's last pixel is read, so pooling adds no cycles.
+- **Pooling:** with pooling, each row is one pixel of a feature map. The unit keeps a line buffer of the pooled rows still in progress, each pixel a running maximum or a running sum. With windows side by side that is one band; with `stride` it is ⌈K / S⌉ rows, for example two for 3×3 windows 2 apart, since each input pixel can fall in several windows.
+- **Output timing:** it writes a pooled row on the cycle the last pixel of its windows is read, so pooling adds no cycles.
 
 ## Interlocks
 

@@ -106,7 +106,7 @@ std::vector<std::string> operand_keys(Op op) {
 // Keys an instruction also accepts but does not require.
 std::vector<std::string> optional_keys(Op op) {
     if (op == Op::Activate) {
-        return {"pool", "size", "width"};
+        return {"pool", "size", "width", "stride"};
     }
     return {};
 }
@@ -132,6 +132,8 @@ void set_operand(Instr& in, const std::string& key, u32 value) {
         in.pool_size = value;
     } else if (key == "width") {
         in.pool_width = value;
+    } else if (key == "stride") {
+        in.pool_stride = value;
     }
 }
 

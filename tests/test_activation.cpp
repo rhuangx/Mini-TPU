@@ -125,7 +125,7 @@ TEST(act_one_row_per_cycle) {
     acc.row(10)[0]   = 300;
     acc.row(10)[255] = -7;
     acc.row(11)[0]   = -300;
-    unit.start(10, 20, 2, 1, ActivationFunction::Identity, Pooling::None, 0, 0);
+    unit.start(10, 20, 2, 1, ActivationFunction::Identity, Pooling::None, 0, 0, 0);
     CHECK(unit.busy());
     CHECK(unit.reads_acc_rows(11, 1));
     CHECK(unit.writes_ub_rows(21, 5));

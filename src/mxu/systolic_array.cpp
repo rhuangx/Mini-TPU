@@ -2,6 +2,7 @@
 
 #include "mxu/systolic_array.h"
 
+#include <algorithm>
 #include <stdexcept>
 #include <string>
 
@@ -80,6 +81,10 @@ void SystolicArray::start(u32 ub_row, u32 acc_row, u32 rows, bool accumulate, bo
     accumulate_ = accumulate;
     step_       = 0;
     busy_       = rows > 0;
+
+    // The last multiply's final steps can leave a PE or two behind in the grid it no longer writes.
+    std::fill(grid_.begin(), grid_.end(), Pe{});
+    std::fill(next_grid_.begin(), next_grid_.end(), Pe{});
 }
 
 void SystolicArray::tick() {
@@ -117,40 +122,43 @@ void SystolicArray::shift_weights() {
 }
 
 // One step: every PE takes the activation from its left and the partial sum from above, adds its product, and passes both on.
+// Input row r reaches PE (k, n) at step r + k + n, so after this step PE (k, n) holds row step - k - n: in each array row
+// that is a band `rows_` PEs wide, and only the band is visited. Every PE outside it is empty, and stays so.
 void SystolicArray::step_array() {
     const std::vector<i8>& weights = planes_[active_plane_];
+    const long long step  = step_;
+    const long long rows  = rows_;
+    const long long right = kDim - 1;
 
     for (u32 k = 0; k < kDim; ++k) {
-        for (u32 n = 0; n < kDim; ++n) {
-            Pe incoming;
+        // next_grid_ still holds the state of two steps ago, whose band started up to 2 PEs further left: empty those.
+        const long long first = std::max(0LL, step - k - rows + 1);
+        const long long last  = std::min(right, step - k);
+        for (long long n = std::max(0LL, step - 2 - k - rows + 1); n < std::min(first, right + 1); ++n) {
+            next_grid_[at(k, static_cast<u32>(n))] = Pe{};
+        }
 
-            if (n == 0) {
+        for (long long n = first; n <= last; ++n) {
+            const u32 col = static_cast<u32>(n);
+            Pe incoming;
+            if (col == 0) {
                 // The left edge: array row k takes input row (step - k), so each row starts k cycles later (the skew).
-                const long long input_row = static_cast<long long>(step_) - static_cast<long long>(k);
-                const bool has_input = input_row >= 0 && input_row < static_cast<long long>(rows_);
-                if (has_input) {
-                    const u32 r = static_cast<u32>(input_row);
-                    incoming.act = ub_.row(ub_row_ + r)[k];
-                    incoming.row = static_cast<int>(r);
-                }
+                const u32 r  = static_cast<u32>(step - k);
+                incoming.act = ub_.row(ub_row_ + r)[k];
+                incoming.row = static_cast<int>(r);
             } else {
-                const Pe& left = grid_[at(k, n - 1)];
+                const Pe& left = grid_[at(k, col - 1)];
                 incoming.act = left.act;
                 incoming.row = left.row;
             }
 
-            Pe& next = next_grid_[at(k, n)];
-            if (incoming.row < 0) {
-                next = Pe{};
-                continue;
-            }
-
             i32 psum_in = 0;
             if (k > 0) {
-                psum_in = grid_[at(k - 1, n)].psum;
+                psum_in = grid_[at(k - 1, col)].psum;
             }
-            const i32 product = static_cast<i32>(incoming.act) * static_cast<i32>(weights[at(k, n)]);
+            const i32 product = static_cast<i32>(incoming.act) * static_cast<i32>(weights[at(k, col)]);
 
+            Pe& next  = next_grid_[at(k, col)];
             next.act  = incoming.act;
             next.row  = incoming.row;
             next.psum = psum_in + product;
@@ -158,7 +166,10 @@ void SystolicArray::step_array() {
     }
 
     // The bottom row now holds finished column sums: input row r, column n, arrives at step r + 255 + n.
-    for (u32 n = 0; n < kDim; ++n) {
+    const long long bottom_first = std::max(0LL, step - right - rows + 1);
+    const long long bottom_last  = std::min(right, step - right);
+    for (long long col = bottom_first; col <= bottom_last; ++col) {
+        const u32 n = static_cast<u32>(col);
         const Pe& bottom = next_grid_[at(kDim - 1, n)];
         if (bottom.row < 0) {
             continue;

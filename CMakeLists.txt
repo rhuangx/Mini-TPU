@@ -25,7 +25,7 @@ else()
 endif()
 
 # One executable per tools/*.cpp that exists so far.
-foreach(tool tpu_sim gen_programs roofline check_headers)
+foreach(tool tpu_sim gen_programs resnet18 roofline check_headers)
   if(EXISTS ${CMAKE_SOURCE_DIR}/tools/${tool}.cpp)
     add_executable(${tool} tools/${tool}.cpp)
     target_link_libraries(${tool} PRIVATE tpu_core)
