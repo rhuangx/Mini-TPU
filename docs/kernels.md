@@ -77,18 +77,19 @@ Prefetching hides the weight fetches behind each other, but not behind the arith
 
 To keep the array busy, each tile has to be used on over a thousand rows. That happens with large batches, and with convolutions over big images, where every weight is reused at every pixel. For inference on MLPs and LSTMs, where batches are small, TPUv1 is bound by weight bandwidth rather than by arithmetic.
 
-## ResNet-18
+## ResNet
 
-`compile_resnet(net, image)` in `src/compiler/resnet.cpp` turns a whole ResNet into one program. `src/ref/ref_resnet.cpp` builds the network and runs it as plain loops, and `tools/resnet18` runs both and compares every map.
+`compile_resnet(net, image)` in `src/compiler/resnet.cpp` turns a whole ResNet-50 into one program. `src/ref/ref_resnet.cpp` builds the network, or loads a pretrained one, and runs it as plain loops. `tools/resnet` runs both and compares every map.
 
 ### The network
 
 - **Shape:**
   - a 7×7 stride-2 stem, then a 3×3 stride-2 max pool;
-  - four stages of two basic blocks, with 64, 128, 256 and 512 channels. Stages 2–4 open with a stride-2 block whose shortcut is a 1×1 stride-2 conv;
+  - four stages of 3, 4, 6 and 3 bottleneck blocks (1×1, 3×3, 1×1), 64, 128, 256 and 512 channels wide, each block's output 4× its width. The stride is on the 3×3 conv;
+  - Stages 2–4 open with a stride-2 block. A block whose stride or width changes has a 1×1 conv as its shortcut;
   - a global average pool and a 1,000-way fully connected layer.
-- **Weights:** random int8 from −7 to 7. BatchNorm counts as folded into the weights, and there are no biases.
-- **Shifts:** each conv's shift is chosen on the input image, so that the 99.9th percentile of its sums lands at 127. An identity shortcut adds x · 2^min(shift, 6), so x passes through the block's shift about whole.
+- **Random weights:** int8 from −7 to 7, plus random biases. Each conv's shift is chosen on the input image, so that the 99.9th percentile of its sums lands at 127. An identity shortcut adds x · 2^min(shift, 6), so x passes through the block's shift about whole.
+- **Pretrained weights:** see [Pretrained ResNet-50](#pretrained-resnet-50).
 
 ### What stays on the chip
 
@@ -96,8 +97,8 @@ Only the image comes from the host. Every activation map stays in the Unified Bu
 
 | Layout | Feeds | Pixel (y, x) is at |
 |---|---|---|
-| frame | a stride-1 block | `base + (y + 1)·pitch + (x + 1)`, with pitch = side + 2 and a zero border |
-| phases | a stride-2 block | the bordered map split by row and column parity into four phases. Pixel (y, x) is in phase ((y + 1) mod 2, (x + 1) mod 2), at row ⌊(y + 1) / 2⌋, column ⌊(x + 1) / 2⌋, with pitch = side / 2 + 2 |
+| frame | a stride-1 conv | `base + (y + 1)·pitch + (x + 1)`, with pitch = side + 2 and a zero border |
+| phases | a stride-2 conv | the bordered map split by row and column parity into four phases. Pixel (y, x) is in phase ((y + 1) mod 2, (x + 1) mod 2), at row ⌊(y + 1) / 2⌋, column ⌊(x + 1) / 2⌋, with pitch = side / 2 + 2 |
 | vector | the classifier | one row per block |
 
 ### Convolutions as shifted multiplies
@@ -106,18 +107,27 @@ Only the image comes from the host. Every activation map stays in the Unified Bu
   - So a 3×3 conv is one `MatrixMultiply` per tap and input block, all adding into the same accumulator rows, each with its tap's 256×256 weight tile.
   - The zero border supplies the padding.
   - The two rows between image rows (x = side and side + 1) compute garbage that nothing reads.
-- **Stride 2:** the block before writes its output as phases. Tap (dy, dx) then reads phase (dy mod 2, dx mod 2), shifted by ⌊dy / 2⌋·pitch + ⌊dx / 2⌋, which is again one run of rows.
+- **Stride 2:** the conv before writes its output as phases. Tap (dy, dx) then reads phase (dy mod 2, dx mod 2), shifted by ⌊dy / 2⌋·pitch + ⌊dx / 2⌋, which is again one run of rows.
+- **1×1 convs:** a 1×1 conv is the centre tap of a 3×3 one. When a 1×1 stride-1 conv writes the same layout it reads, as a bottleneck's first conv does, it is pointwise. So it runs as one multiply per block over the whole map, border and all, and one `Activate` writes the whole map back.
 - **Writing maps:**
   - A frame is written by one `Activate` per image row, which leaves the border zero.
-  - Phases need one `Activate` per pixel, because neighbouring pixels go to different phases. That is 4,116 one-row `Activate`s in all.
+  - Phases need one `Activate` per pixel, because neighbouring pixels go to different phases.
 
 ### Residuals in the accumulators
 
 The shortcut is one more multiply into the conv's accumulator rows, before the block's `Activate`:
-- **Identity:** the block's input frame read at its centre tap, times a tile with 2^min(shift, 6) on the diagonal.
-- **Downsample:** phase (1, 1) of the block's input, which is exactly its stride-2 pixels, times the 1×1 conv's weights.
+- **Identity:** the block's input frame read at its centre tap, times a tile with the residual scale on the diagonal.
+- **Downsample:** the 1×1 conv's weights, times the block's input frame at stride 1, or at stride 2 its phase (1, 1), which is exactly its stride-2 pixels.
 
-Either way, relu((conv + shortcut) / 2^shift) is a single `Activate`, and no add instruction is needed.
+Either way, relu((conv + bias + shortcut) / 2^shift) is a single `Activate`, and no add instruction is needed.
+
+### Biases from a mask
+
+TPUv1 has no bias add, so a bias is also one more multiply into the same accumulator rows:
+- **The mask:** a map in the conv's output layout that holds the row [1, 127, 127, …, 127] at every pixel and zeros on the border. The host sends each mask the first time a conv needs it, one per layout and side, 7 in ResNet-50.
+- **The tile:** column n holds bias = r + 127·q, with |r| ≤ 63 in row 0 and q spread over the other 255 rows, at most 127 each. The multiply then adds r + 127·q at every pixel. A bias can be up to about ±4.1 million.
+- **The border stays zero,** because the mask is zero there. This is what lets a 1×1 conv run over a whole map.
+- **Stem:** its im2col rows already carry the constants after the 147 taps, so its bias comes with the conv's own multiply.
 
 ### The stem, the pools and the classifier
 
@@ -128,34 +138,51 @@ Either way, relu((conv + shortcut) / 2^shift) is a single `Activate`, and no add
 - **Global average pool:** the last block's `Activate` pools its 7×7 map directly, with `pool=avg size=7 stride=7` over the 9-wide frame. The two garbage columns fall outside the window.
 - **Classifier:** 2 input blocks × 4 output blocks of single-row multiplies. The logits then go back to the host.
 
+### Pretrained ResNet-50
+
+`tools/export_resnet50.py` turns torchvision's ResNet-50 (`IMAGENET1K_V1`) into the file `load_resnet` reads:
+- **BatchNorm** is folded into each conv's weights and bias.
+- **Scales:** each map's int8 step is its 99.999th percentile over 100 calibration images, divided by 127. The logits use their maximum instead, so the top ones never saturate.
+- **Shifts:** a conv from step s_in to step s_out sums in units of s_out / 2^shift, so its weights are in units of s_out / (2^shift · s_in). The shift is the largest that keeps every weight within ±127.
+- **Residuals:** an identity shortcut adds x · r, so the sums' unit is s_x / r, with r up to 127 and the largest the last conv's weights allow. A downsample's 1×1 conv shares the last conv's unit, and its bias joins the last conv's.
+- **Check:** the exporter also runs the int8 network in PyTorch, in float64, which is exact for these sums, with the simulator's rounding. On the 900 images it did not calibrate on, one per remaining ImageNet class:
+
+| | top-1 | top-5 |
+|---|---|---|
+| float | 88.8% | 97.9% |
+| int8 | 87.8% | 97.9% |
+
+The int8 top-1 equals float's on 95.4% of the images.
+
 ### What one image costs
 
 | | |
 |---|---|
-| Program | 5,035 instructions, 253 weight tiles (15.8 MiB) |
-| Cycles | 599,132 (0.86 ms at 700 MHz) |
-| MXU busy | 53% of cycles |
-| Arithmetic | 1.81 G MACs, 3,028 per cycle: 4.6% of the array's peak |
+| Program | 7,878 instructions, 601 weight tiles (37.6 MiB) |
+| Cycles | 1,206,833 (1.72 ms at 700 MHz) |
+| MXU busy | 50% of cycles |
+| Arithmetic | 4.09 G MACs, 3,388 per cycle: 5.2% of the array's peak |
 
 | Stall cause | Share of cycles |
 |---|---|
-| MXU busy | 45.0% |
-| weights not ready | 21.4% |
-| host interface busy | 17.3% |
-| accumulator rows not ready | 7.9% |
-| activation unit busy | 4.8% |
-| Unified Buffer rows not ready | 2.7% |
+| MXU busy | 39.1% |
+| weights not ready | 28.2% |
+| accumulator rows not ready | 10.4% |
+| Unified Buffer rows not ready | 9.4% |
+| host interface busy | 8.6% |
+| activation unit busy | 3.7% |
 
-The array is busy half the time but does under 5% of its peak work:
-- **Narrow layers:** a 64-channel conv uses 64 of a tile's 256 rows and 64 of its 256 columns, so only 1/16 of the PEs. A 128-channel conv uses 1/4.
+The array is busy half the time but does about 5% of its peak work:
+- **Narrow layers:** a 64-channel conv uses 64 of a tile's 256 rows and 64 of its 256 columns, so only 1/16 of the PEs. A 128-channel conv uses 1/4. The 1×1 convs at 256 channels and up fill whole tiles.
 - **Fill and drain:** every multiply pays 511 cycles on top of its rows (see "One multiply at a time" in [microarch.md](microarch.md)). Stage 4's maps are 7×7, which is 61 rows per multiply.
-- **Weight bandwidth:** a stage-4 conv needs 36 tiles at 1,366 cycles each from DDR3, against multiplies of 572 cycles. That is most of the 21% spent waiting for weights.
+- **Weight bandwidth:** each tile takes 1,366 cycles to arrive from DDR3. In stage 4 a multiply takes about 572 cycles, so there most of the time goes to waiting for weights. Every image fetches 37.6 MiB of tiles.
+- **Biases** cost one multiply per output block, plus the masks' host transfers, 9,330 rows.
 - **PCIe:** the im2col'd image is 12,769 rows at 12 cycles each, about 153,000 cycles. The bands overlap it with the stem's arithmetic.
 
 ### Limits
 
-- The final map must fit the pool window (at most 7×7), and a stage-1 conv's map must fit the 4,096 accumulator rows. Together these allow inputs up to 224×224.
+- The final map must fit the pool window (at most 7×7), and a stage-1 conv's map must fit the 4,096 accumulator rows. Together these allow inputs up to 224×224. The network uses 85,697 of the Unified Buffer's 98,304 rows, because every map stays in it.
 - One image per program (batch 1).
 - The tests run two small networks bit for bit:
   - a 32×32 input through all four stages;
-  - a stage of 264 channels with 300 classes, so every multiply, shortcut and the classifier spans two 256-wide blocks.
+  - a stage of 264 output channels with 300 classes, so every multiply, shortcut, bias and the classifier spans two 256-wide blocks.

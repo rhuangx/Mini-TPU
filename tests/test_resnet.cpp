@@ -21,8 +21,10 @@ void check_against_reference(const ResNetConfig& config) {
     tpu.run_to_halt();
 
     CHECK(read_map(tpu.ub(), compiled.stem) == trace.stem);
-    for (std::size_t i = 0; i < compiled.block_a.size(); ++i) {
-        CHECK(read_map(tpu.ub(), compiled.block_a[i]) == trace.block_a[i]);
+    for (std::size_t i = 0; i < compiled.block_convs.size(); ++i) {
+        for (std::size_t c = 0; c < compiled.block_convs[i].size(); ++c) {
+            CHECK(read_map(tpu.ub(), compiled.block_convs[i][c]) == trace.block_convs[i][c]);
+        }
     }
     for (std::size_t i = 0; i < compiled.block_out.size(); ++i) {
         CHECK(read_map(tpu.ub(), compiled.block_out[i]) == trace.block_out[i]);
@@ -51,7 +53,8 @@ std::string compile_error(const ResNetConfig& config) {
 }  // namespace
 
 TEST(resnet_four_stages_match_the_reference) {
-    // 32 x 32 in: the stem and its pool give 8 x 8, then 8, 4, 2 and 1; each later stage opens with a downsample block.
+    // 32 x 32 in: the stem and its pool give 8 x 8, then 8, 4, 2 and 1. The first block's shortcut is a stride-1 1x1
+    // conv, each later stage opens with a stride-2 block, and the 1x1 convs run over whole frames and phases.
     ResNetConfig config;
     config.size     = 32;
     config.channels = {8, 16, 32, 64};
@@ -61,11 +64,11 @@ TEST(resnet_four_stages_match_the_reference) {
 }
 
 TEST(resnet_wide_channels_span_blocks) {
-    // 264 channels and 300 classes take two 256-wide blocks each: multiplies add across input blocks, and the identity
-    // and downsample shortcuts and the fully connected layer each cover both.
+    // 264 output channels and 300 classes take two 256-wide blocks each: multiplies add across input blocks, and the
+    // identity and downsample shortcuts, the biases and the fully connected layer each cover both.
     ResNetConfig config;
     config.size     = 32;
-    config.channels = {8, 264};
+    config.channels = {8, 66};
     config.blocks   = {1, 2};
     config.classes  = 300;
     check_against_reference(config);

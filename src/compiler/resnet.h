@@ -30,15 +30,15 @@ struct CompiledResNet {
     Program                   program;
     u32                       result_host_row = 0;   // the logits: one host row per 256 classes
     u32                       classes         = 0;
-    MapPlacement              stem;
-    std::vector<MapPlacement> block_a;     // each block's first conv
-    std::vector<MapPlacement> block_out;   // every block's output but the last, which is pooled straight into `pooled`
+    MapPlacement                           stem;
+    std::vector<std::vector<MapPlacement>> block_convs;   // each block's maps after every conv but the last
+    std::vector<MapPlacement>              block_out;     // every block's output but the last, pooled straight into `pooled`
     MapPlacement              pooled;
     u32                       tiles = 0;   // weight tiles fetched from DDR3
 };
 
 // The image goes to host memory im2col'd for the stem, with an extra zero row and column that become the max pool's
-// padding. Everything after the stem stays on the chip until the logits are written back.
+// padding, and so do the bias masks. Everything after the stem stays on the chip until the logits are written back.
 CompiledResNet compile_resnet(const ResNet& net, const Matrix8& image);
 
 // A map read back out of the Unified Buffer, one pixel per row, to compare with the reference.
